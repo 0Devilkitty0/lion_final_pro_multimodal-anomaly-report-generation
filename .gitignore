@@ -40,3 +40,12 @@ Thumbs.db
 /build
 .eggs/
 *.egg
+
+# ===== claude & gemini ====
+CLAUDE.md
+*.claude
+GEMINI.md
+
+# ===== google drive desktop ====
+.tmp.drivedownload
+.tmp.driveupload
