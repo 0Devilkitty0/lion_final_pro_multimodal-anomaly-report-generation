@@ -1,10 +1,49 @@
 """Anomaly Model Factory"""
 from __future__ import annotations
-
 from .base import AnomalyModel
 from .dummy_edge import DummyEdgeAnomaly
-from .patchcore_adapter import PatchCoreAdapter
-from ..utils.loaders import load_config
+from anomalib.data import MVTecAD
+from anomalib.models import Patchcore
+from anomalib.engine import Engine
+
+from src.utils.loaders import load_config
+from src.utils.device import get_device
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 MODEL_REGISTRY: dict[str, type] = {
     "dummy": DummyEdgeAnomaly,
