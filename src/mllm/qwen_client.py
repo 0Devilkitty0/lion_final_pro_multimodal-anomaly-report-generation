@@ -51,7 +51,7 @@ class QwenVLClient(BaseLLMClient):
 
         from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
 
-        logger.info(f"Loading Qwen model from {self.model_path}...")
+        # Loading message (will only show if logging level is DEBUG)
 
         attn_impl = "flash_attention_2" if self._use_flash_attention else "eager"
 
@@ -63,7 +63,7 @@ class QwenVLClient(BaseLLMClient):
                 device_map=self.device,
             )
         except Exception as e:
-            logger.warning(f"Flash attention failed, falling back to eager: {e}")
+            pass  # Fall back to eager attention
             self._model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 self.model_path,
                 torch_dtype=self.torch_dtype,
@@ -77,7 +77,7 @@ class QwenVLClient(BaseLLMClient):
             max_pixels=self.max_pixels,
         )
 
-        logger.info("Qwen model loaded successfully")
+        # Model loaded
 
     def build_payload(
         self,
@@ -186,7 +186,6 @@ class QwenVLClient(BaseLLMClient):
                 continue
 
             response_text = self.extract_response_text(response)
-            print(f"Response: {response_text}")
 
             # Get options for fuzzy matching
             conv = meta.get("conversation", [])
@@ -197,6 +196,5 @@ class QwenVLClient(BaseLLMClient):
                 predicted_answers.append(parsed[-1])
             else:
                 predicted_answers.append(response_text[:1] if response_text else '')
-                logger.warning(f"No matching answer at {query_image_path}: {part_questions}")
 
         return questions, answers, predicted_answers, question_types

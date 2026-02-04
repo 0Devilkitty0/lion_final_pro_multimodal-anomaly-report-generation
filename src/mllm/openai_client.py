@@ -53,23 +53,18 @@ class GPT4Client(BaseLLMClient):
                 if choices:
                     content = choices[0].get('message', {}).get('content', '').lower()
                     if any(word in content for word in self.ERROR_KEYWORDS):
-                        print(f"Error response: {content[:100]}...")
                         retries += 1
                         continue
 
                     self.api_time_cost += time.time() - before
                     return response_json
                 else:
-                    print(f"No choices in response: {response_json}")
                     retries += 1
 
             except RequestException as e:
-                print(f"Request failed: {e}, retrying in {retry_delay}s...")
                 time.sleep(retry_delay)
                 retry_delay *= 2
                 retries += 1
-
-        print("Failed to send request after all retries.")
         return None
 
     def build_payload(
@@ -98,7 +93,6 @@ class GPT4Client(BaseLLMClient):
                     }
                 })
             except FileNotFoundError:
-                print(f"Warning: Cannot read template image: {ref_path}")
                 continue
 
         # Build conversation text

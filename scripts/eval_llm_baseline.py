@@ -49,13 +49,21 @@ from src.eval.metrics import calculate_accuracy_mmad
 
 # Model registry with HuggingFace model IDs
 MODEL_REGISTRY = {
-    # API models
+    # API models - OpenAI
     "gpt-4o": {"type": "api", "class": "GPT4Client", "model": "gpt-4o"},
     "gpt-4o-mini": {"type": "api", "class": "GPT4Client", "model": "gpt-4o-mini"},
     "gpt-4v": {"type": "api", "class": "GPT4Client", "model": "gpt-4-vision-preview"},
+
+    # API models - Anthropic
     "claude": {"type": "api", "class": "ClaudeClient", "model": "claude-sonnet-4-20250514"},
     "claude-sonnet": {"type": "api", "class": "ClaudeClient", "model": "claude-sonnet-4-20250514"},
     "claude-haiku": {"type": "api", "class": "ClaudeClient", "model": "claude-3-5-haiku-20241022"},
+
+    # API models - Google Gemini (FREE tier available!)
+    "gemini": {"type": "api", "class": "GeminiClient", "model": "gemini-1.5-flash"},
+    "gemini-flash": {"type": "api", "class": "GeminiClient", "model": "gemini-1.5-flash"},
+    "gemini-pro": {"type": "api", "class": "GeminiClient", "model": "gemini-1.5-pro"},
+    "gemini-2.0-flash": {"type": "api", "class": "GeminiClient", "model": "gemini-2.0-flash-exp"},
 
     # Qwen models
     "qwen": {"type": "local", "class": "QwenVLClient", "model": "Qwen/Qwen2.5-VL-7B-Instruct"},
@@ -96,6 +104,10 @@ def get_llm_client(model_name: str, model_path: str = None, **kwargs) -> BaseLLM
         elif info["class"] == "ClaudeClient":
             from src.mllm.claude_client import ClaudeClient
             return ClaudeClient(model=actual_model, **kwargs)
+
+        elif info["class"] == "GeminiClient":
+            from src.mllm.gemini_client import GeminiClient
+            return GeminiClient(model=actual_model, **kwargs)
 
         elif info["class"] == "QwenVLClient":
             from src.mllm.qwen_client import QwenVLClient
@@ -219,7 +231,9 @@ def main():
 
     template_type = "Similar_template" if args.similar_template else "Random_template"
     ad_suffix = "_with_AD" if args.with_ad else ""
-    output_name = f"answers_{args.few_shot}_shot_{args.model}_{template_type}{ad_suffix}"
+    # Sanitize model name for filename (replace / with _)
+    model_name_safe = args.model.replace("/", "_").replace("\\", "_")
+    output_name = f"answers_{args.few_shot}_shot_{model_name_safe}_{template_type}{ad_suffix}"
     answers_json_path = output_dir / f"{output_name}.json"
 
     print("=" * 60)
@@ -273,8 +287,15 @@ def main():
     print(f"Total images: {len(image_paths)}")
     print()
 
-    # Evaluate
-    for image_rel in tqdm(image_paths, desc="Evaluating"):
+    # Track statistics
+    total_correct = 0
+    total_questions = 0
+    processed = 0
+    errors = 0
+
+    # Evaluate with progress bar
+    pbar = tqdm(image_paths, desc="Evaluating", ncols=100)
+    for image_rel in pbar:
         if image_rel in existing_images:
             continue
 
@@ -292,12 +313,8 @@ def main():
 
         # Check if image exists
         if not Path(query_image_path).exists():
-            print(f"Warning: Image not found: {query_image_path}")
+            errors += 1
             continue
-
-        # TODO: If using AD model, add heatmap/bbox to the prompt
-        # This would require modifying the client's build_payload method
-        # For now, AD model output integration is a placeholder
 
         # Generate answers
         if args.batch_mode:
@@ -309,18 +326,19 @@ def main():
                 query_image_path, meta, few_shot_paths
             )
 
-        if predicted is None:
-            print(f"Error at {image_rel}")
-            continue
-
-        if len(predicted) != len(answers):
-            print(f"Warning: Answer count mismatch at {image_rel}: {len(predicted)} vs {len(answers)}")
+        if predicted is None or len(predicted) != len(answers):
+            errors += 1
             continue
 
         # Calculate accuracy for this image
         correct = sum(1 for p, a in zip(predicted, answers) if p == a)
-        accuracy = correct / len(answers) if answers else 0
-        print(f"Image: {image_rel}, Accuracy: {accuracy:.2f}")
+        total_correct += correct
+        total_questions += len(answers)
+        processed += 1
+
+        # Update progress bar with running accuracy
+        running_acc = total_correct / total_questions if total_questions > 0 else 0
+        pbar.set_postfix({"acc": f"{running_acc:.1%}", "done": processed, "err": errors}, refresh=False)
 
         # Store results
         for q, a, pred, qt in zip(questions, answers, predicted, q_types):
@@ -329,12 +347,14 @@ def main():
                 "question": q,
                 "question_type": qt,
                 "correct_answer": a,
-                "gpt_answer": pred  # Using 'gpt_answer' for compatibility with paper's metrics
+                "gpt_answer": pred
             })
 
         # Save incrementally
         with open(answers_json_path, "w", encoding="utf-8") as f:
             json.dump(all_answers, f, indent=4, ensure_ascii=False)
+
+    pbar.close()
 
     print()
     print("=" * 60)

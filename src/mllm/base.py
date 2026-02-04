@@ -121,7 +121,7 @@ class BaseLLMClient(ABC):
         found_answers = pattern.findall(response_text)
 
         if len(found_answers) == 0 and options is not None:
-            print(f"Failed to extract answer from response: {response_text}")
+            pass  # Fallback to fuzzy matching
             options_values = list(options.values())
             closest_matches = get_close_matches(response_text, options_values, n=1, cutoff=0.0)
             if closest_matches:

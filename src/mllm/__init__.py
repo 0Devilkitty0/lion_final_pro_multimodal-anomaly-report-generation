@@ -9,6 +9,7 @@ __all__ = [
     # Lazy-loaded clients
     "get_gpt4_client",
     "get_claude_client",
+    "get_gemini_client",
     "get_qwen_client",
     "get_internvl_client",
     "get_llava_client",
@@ -26,6 +27,12 @@ def get_claude_client(*args, **kwargs):
     """Get Claude client."""
     from .claude_client import ClaudeClient
     return ClaudeClient(*args, **kwargs)
+
+
+def get_gemini_client(*args, **kwargs):
+    """Get Gemini client (FREE tier available!)."""
+    from .gemini_client import GeminiClient
+    return GeminiClient(*args, **kwargs)
 
 
 def get_qwen_client(*args, **kwargs):

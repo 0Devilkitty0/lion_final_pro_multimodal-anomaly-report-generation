@@ -50,7 +50,6 @@ class ClaudeClient(BaseLLMClient):
 
                 # Check for error
                 if "error" in response_json:
-                    print(f"API error: {response_json['error']}")
                     retries += 1
                     time.sleep(retry_delay)
                     retry_delay *= 2
@@ -62,16 +61,12 @@ class ClaudeClient(BaseLLMClient):
                     self.api_time_cost += time.time() - before
                     return response_json
                 else:
-                    print(f"No content in response: {response_json}")
                     retries += 1
 
             except RequestException as e:
-                print(f"Request failed: {e}, retrying in {retry_delay}s...")
                 time.sleep(retry_delay)
                 retry_delay *= 2
                 retries += 1
-
-        print("Failed to send request after all retries.")
         return None
 
     def build_payload(
@@ -104,7 +99,6 @@ class ClaudeClient(BaseLLMClient):
                     }
                 })
             except FileNotFoundError:
-                print(f"Warning: Cannot read template image: {ref_path}")
                 continue
 
         # Add query image

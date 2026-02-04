@@ -65,7 +65,7 @@ class LLaVAClient(BaseLLMClient):
         """Load model using HuggingFace transformers (recommended)."""
         from transformers import AutoProcessor, LlavaForConditionalGeneration
 
-        logger.info(f"Loading LLaVA model from {self.model_path} (HuggingFace)...")
+        # Loading LLaVA model (HuggingFace)
 
         torch_dtype = self._get_torch_dtype()
 
@@ -77,7 +77,7 @@ class LLaVAClient(BaseLLMClient):
         )
         self._processor = AutoProcessor.from_pretrained(self.model_path)
 
-        logger.info("LLaVA model loaded successfully")
+        # Model loaded
 
     def _load_model_llava(self):
         """Load model using original llava package."""
@@ -88,7 +88,7 @@ class LLaVAClient(BaseLLMClient):
         except ImportError:
             raise ImportError("Please install llava package: pip install llava")
 
-        logger.info(f"Loading LLaVA model from {self.model_path} (llava package)...")
+        # Loading LLaVA model (llava package)
 
         disable_torch_init()
         model_name = get_model_name_from_path(self.model_path)
@@ -96,7 +96,7 @@ class LLaVAClient(BaseLLMClient):
         self._tokenizer, self._model, self._image_processor, self._context_len = \
             load_pretrained_model(self.model_path, None, model_name)
 
-        logger.info("LLaVA model loaded successfully")
+        # Model loaded
 
     def _load_model(self):
         """Lazy load model."""
@@ -147,7 +147,7 @@ class LLaVAClient(BaseLLMClient):
             try:
                 images.append(Image.open(ref_path).convert("RGB"))
             except Exception as e:
-                logger.warning(f"Failed to load template image {ref_path}: {e}")
+                continue
 
         images.append(Image.open(payload["query_image"]).convert("RGB"))
 
@@ -283,7 +283,6 @@ class LLaVAClient(BaseLLMClient):
                 continue
 
             response_text = self.extract_response_text(response)
-            print(f"Response: {response_text}")
 
             # Get options for fuzzy matching
             conv = meta.get("conversation", [])

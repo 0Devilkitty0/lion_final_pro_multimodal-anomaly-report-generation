@@ -191,7 +191,7 @@ class InternVLClient(BaseLLMClient):
 
         from transformers import AutoModel, AutoTokenizer
 
-        logger.info(f"Loading InternVL model from {self.model_path}...")
+        # Loading InternVL model
 
         model_name = self.model_path.split('/')[-1]
         torch_dtype = self._get_torch_dtype()
@@ -225,7 +225,7 @@ class InternVLClient(BaseLLMClient):
             use_fast=False
         )
 
-        logger.info("InternVL model loaded successfully")
+        # Model loaded
 
     def build_payload(
         self,
@@ -273,7 +273,7 @@ class InternVLClient(BaseLLMClient):
                     img = img.cuda()
                 template_images.append(img)
             except Exception as e:
-                logger.warning(f"Failed to load template image {ref_path}: {e}")
+                continue
 
         images = template_images + [query_image]
         pixel_values = torch.cat(images, dim=0)
@@ -326,7 +326,7 @@ class InternVLClient(BaseLLMClient):
                     img = img.cuda()
                 template_images.append(img)
             except Exception as e:
-                logger.warning(f"Failed to load template image {ref_path}: {e}")
+                continue
 
         images = template_images + [query_image]
         pixel_values = torch.cat(images, dim=0)
@@ -361,8 +361,6 @@ class InternVLClient(BaseLLMClient):
                 return_history=True
             )
             # Note: _history is intentionally unused (no conversation history by default)
-
-            print(f"Response: {response}")
 
             parsed = self.parse_answer(response)
             if parsed:
