@@ -57,6 +57,7 @@ class EpochProgressCallback(Callback):
             parts.append(f"F1={float(f1):.4f}")
 
         print(" | ".join(parts), flush=True)
+        print(f"DEBUG: Available metrics: {metrics}", flush=True)
 
 
 class Anomalibs:
@@ -118,9 +119,6 @@ class Anomalibs:
         return kwargs
 
     def get_engine(self, dataset: str = None, category: str = None, model=None, datamodule=None, stage: str = None):
-        # Import necessary callbacks
-        from pytorch_lightning.callbacks import ModelCheckpoint
-
         # WandB logger 설정 (predict 시에는 비활성화)
         logger_config = self.engine_config.get("logger", False)
         if logger_config == "wandb":
@@ -167,31 +165,6 @@ class Anomalibs:
         enable_progress = self.engine_config.get("enable_progress_bar", False)
         callbacks = [] if enable_progress else [EpochProgressCallback()]
 
-        # --- Custom Callbacks for Checkpoint and Visualizer ---
-
-        # 1. ModelCheckpoint Callback (for simplified path)
-        if dataset and category: # Only add if dataset and category are available for path
-            checkpoint_dir = (
-                self.output_root
-                / self.MODEL_DIR_MAP.get(self.model_name, self.model_name.capitalize())
-                / dataset
-                / category
-                / "v0" # Version folder
-            )
-            checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
-            model_checkpoint_callback = ModelCheckpoint(
-                dirpath=str(checkpoint_dir),
-                filename="model", # Saves as model.ckpt
-                save_last=True,
-                save_top_k=1,
-                monitor="AUROC", # Changed from "image_AUROC" to "AUROC"
-                mode="max",
-            )
-            callbacks.append(model_checkpoint_callback)
-        # If dataset/category not available, default ModelCheckpoint might still be added by Anomalib.
-        # Or, if this is a predict-only scenario without training, no checkpoint is needed.
-
         # Visualizer Callback (yaml에서 visualizer: true일 때만)
         visualizer_enabled = self.model_params.get("visualizer", False)
         if visualizer_enabled and stage == "predict" and dataset and category:
@@ -218,6 +191,27 @@ class Anomalibs:
             except Exception as e:
                 logger.warning(f"Visualizer callback not available: {e}")
 
+        # 1. ModelCheckpoint - save_last만 사용 (AUROC 모니터링 안 함)
+        #    PatchCore 등은 학습 중 AUROC를 로깅하지 않으므로 monitor 사용 불가
+        from pytorch_lightning.callbacks import ModelCheckpoint
+        if dataset and category:
+            checkpoint_dir = (
+                self.output_root
+                / self.MODEL_DIR_MAP.get(self.model_name, self.model_name.capitalize())
+                / dataset
+                / category
+                / "v0"
+            )
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+            model_checkpoint_callback = ModelCheckpoint(
+                dirpath=str(checkpoint_dir),
+                filename="model",
+                save_last=True,   # last.ckpt로 저장
+                save_top_k=0,     # 메트릭 기반 저장 비활성화 (monitor 사용 안 함)
+            )
+            callbacks.append(model_checkpoint_callback)
+
         kwargs = {
             "accelerator": self.engine_config.get("accelerator", "auto"),
             "devices": 1,
@@ -225,6 +219,8 @@ class Anomalibs:
             "logger": logger_config,
             "enable_progress_bar": enable_progress,
             "callbacks": callbacks,
+            # anomalib 내부 ModelCheckpoint 비활성화
+            "enable_checkpointing": False if (dataset and category) else True,
         }
 
         if "max_epochs" in self.training_config:
@@ -243,17 +239,16 @@ class Anomalibs:
             return None
 
         model_dir = self.MODEL_DIR_MAP.get(self.model_name, self.model_name.capitalize())
+        base_dir = self.output_root / model_dir / dataset / category / "v0"
 
-        # Simplified checkpoint path as per user's request:
-        # output/model_name/dataset/category/v0/model.ckpt
-        return (
-            self.output_root
-            / model_dir
-            / dataset
-            / category
-            / "v0"
-            / "model.ckpt"
-        )
+        # 여러 체크포인트 패턴 확인 (last.ckpt 또는 model.ckpt)
+        for ckpt_name in ["last.ckpt", "model.ckpt"]:
+            ckpt_path = base_dir / ckpt_name
+            if ckpt_path.exists():
+                return ckpt_path
+
+        # 기본값 반환 (파일이 없어도)
+        return base_dir / "last.ckpt"
 
     def requires_fit(self) -> bool:
         return self.model_name != "winclip"
