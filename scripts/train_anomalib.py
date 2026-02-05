@@ -185,7 +185,7 @@ class Anomalibs:
                 filename="model", # Saves as model.ckpt
                 save_last=True,
                 save_top_k=1,
-                monitor="image_AUROC", # Assuming this is a common metric to monitor
+                monitor="AUROC", # Changed from "image_AUROC" to "AUROC"
                 mode="max",
             )
             callbacks.append(model_checkpoint_callback)
