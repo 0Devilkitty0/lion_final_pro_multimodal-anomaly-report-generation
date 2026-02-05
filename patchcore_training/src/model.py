@@ -172,7 +172,7 @@ class PatchCore(nn.Module):
 
         print("Extracting features from training data...")
         with torch.no_grad():
-            for batch in tqdm(dataloader, desc="Feature extraction"):
+            for batch in tqdm(dataloader, desc="Feature extraction", mininterval=1.0, ncols=80):
                 images = batch["image"].to(device)
                 features = self.extract_features(images)  # (B, N, D)
 
@@ -227,7 +227,7 @@ class PatchCore(nn.Module):
         # Min distances to selected set
         min_distances = torch.full((N,), float('inf'), device=device)
 
-        for _ in tqdm(range(1, n_select), desc="Coreset sampling", leave=False):
+        for _ in tqdm(range(1, n_select), desc="Coreset sampling", leave=False, mininterval=1.0, ncols=80):
             # Update min distances with last selected point (L2 norm)
             last_selected = features[selected_indices[-1]]
             distances = torch.linalg.norm(features - last_selected, ord=2, dim=1)

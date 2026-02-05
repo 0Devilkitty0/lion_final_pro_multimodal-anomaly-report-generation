@@ -108,7 +108,7 @@ class PatchCoreEvaluator:
         all_masks = []
 
         with torch.no_grad():
-            for batch in tqdm(dataloader, desc=f"  {dataset_name}/{category}", leave=False):
+            for batch in tqdm(dataloader, desc=f"  {dataset_name}/{category}", leave=False, mininterval=1.0):
                 images = batch["image"].to(self.device)
                 labels = batch["label"].numpy()
                 masks = batch["mask"].numpy()

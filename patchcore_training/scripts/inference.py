@@ -288,7 +288,7 @@ def main():
             pin_memory=True,
         )
 
-        for batch in tqdm(dataloader, desc=f"  {category_key}", position=1, leave=False):
+        for batch in tqdm(dataloader, desc=f"  {category_key}", position=1, leave=False, mininterval=1.0):
             valid_mask = batch["valid"]
 
             if not valid_mask.any():
