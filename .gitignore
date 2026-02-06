@@ -6,8 +6,10 @@ weights/
 logs/
 wandb/
 dataset/
+datasets/
 results/
 output/
+Frontend/
 
 # ===== Python =====
 __pycache__/
