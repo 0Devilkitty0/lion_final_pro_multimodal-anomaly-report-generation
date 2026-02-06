@@ -112,22 +112,26 @@ class AnomalyDataset(Dataset):
     def _get_mask_path(self, img_path: Path, defect_type: str) -> Optional[Path]:
         """Get mask path based on dataset format.
 
-        MVTec-LOCO: ground_truth/{defect_type}/{stem}_mask.png
-        GoodsAD: ground_truth/{defect_type}/{stem}.png
+        MVTec-LOCO: ground_truth/{defect_type}/{stem}/{stem}.png (nested folder)
+        GoodsAD: ground_truth/{defect_type}/{stem}.png (flat)
         """
         gt_dir = img_path.parent.parent.parent / "ground_truth" / defect_type
 
         if self.dataset_name == "MVTec-LOCO":
-            # MVTec-LOCO: {stem}_mask.png
+            # MVTec-LOCO: {stem}/{stem}.png (nested folder structure)
+            mask_path = gt_dir / img_path.stem / f"{img_path.stem}.png"
+            if mask_path.exists():
+                return mask_path
+            # Fallback 1: try {stem}_mask.png
             mask_path = gt_dir / f"{img_path.stem}_mask.png"
             if mask_path.exists():
                 return mask_path
-            # Fallback: try without _mask suffix
+            # Fallback 2: try flat structure
             mask_path = gt_dir / f"{img_path.stem}.png"
             if mask_path.exists():
                 return mask_path
         else:
-            # GoodsAD and others: {stem}.png
+            # GoodsAD and others: {stem}.png (flat structure)
             mask_path = gt_dir / f"{img_path.stem}.png"
             if mask_path.exists():
                 return mask_path
