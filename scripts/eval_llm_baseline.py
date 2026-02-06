@@ -9,23 +9,31 @@ Supports two modes:
 1. Paper baseline (without AD model): Image + prompt → LLM
 2. With AD model: AD model output (heatmap/bbox) + Image + prompt → LLM
 
+Performance Optimizations (v2):
+- Batch mode (default): 1 API call per image instead of N (5-8x faster)
+- Parallel workers: Multiple concurrent API calls
+- Buffered I/O: Save every 50 images instead of every image
+
 Usage:
-    # === API Models (GPT-4o, Claude) ===
-    python scripts/eval_llm_baseline.py --model gpt-4o --few-shot 1 --similar-template --max-images 5
-    python scripts/eval_llm_baseline.py --model claude --few-shot 1 --similar-template --max-images 5
+    # === Fast evaluation (default, recommended) ===
+    python scripts/eval_llm_baseline.py --model gpt-4o --few-shot 1 --similar-template
+
+    # === With parallel workers (API models, 2-3x faster) ===
+    python scripts/eval_llm_baseline.py --model gpt-4o --parallel 3
+
+    # === Paper's original protocol (slower, for reproducibility) ===
+    python scripts/eval_llm_baseline.py --model gpt-4o --incremental-mode
 
     # === HuggingFace Models (Local GPU) ===
-    # Qwen2.5-VL
-    python scripts/eval_llm_baseline.py --model qwen --few-shot 1 --similar-template --max-images 5
-
-    # InternVL2
-    python scripts/eval_llm_baseline.py --model internvl --few-shot 1 --similar-template --max-images 5
-
-    # LLaVA
-    python scripts/eval_llm_baseline.py --model llava --few-shot 1 --similar-template --max-images 5
+    python scripts/eval_llm_baseline.py --model qwen --few-shot 1 --similar-template
+    python scripts/eval_llm_baseline.py --model internvl --few-shot 1 --similar-template
+    python scripts/eval_llm_baseline.py --model llava --few-shot 1 --similar-template
 
     # === With Anomaly Detection Model ===
     python scripts/eval_llm_baseline.py --model gpt-4o --with-ad --ad-output output/ad_predictions.json
+
+    # === Quick test ===
+    python scripts/eval_llm_baseline.py --model gpt-4o --max-images 10
 """
 from __future__ import annotations
 
@@ -211,8 +219,14 @@ def main():
                         help="Use similar templates instead of random")
     parser.add_argument("--max-images", type=int, default=None,
                         help="Max images to evaluate (for testing)")
-    parser.add_argument("--batch-mode", action="store_true",
-                        help="Ask all questions in one API call (faster but may be less accurate)")
+    parser.add_argument("--batch-mode", action="store_true", default=True,
+                        help="Ask all questions in one API call (default: True, 5-8x faster)")
+    parser.add_argument("--incremental-mode", action="store_true",
+                        help="Ask questions incrementally (paper's original protocol, slower)")
+    parser.add_argument("--save-interval", type=int, default=50,
+                        help="Save results every N images (default: 50)")
+    parser.add_argument("--parallel", type=int, default=1,
+                        help="Number of parallel workers for API calls (default: 1, max: 5)")
 
     # Anomaly Detection model settings
     parser.add_argument("--with-ad", action="store_true",
@@ -274,11 +288,17 @@ def main():
     print("=" * 60)
     print("MMAD LLM Evaluation")
     print("=" * 60)
+    # Determine batch mode (incremental overrides batch)
+    use_batch_mode = args.batch_mode and not args.incremental_mode
+
     print(f"Model: {args.model}")
     if args.model_path:
         print(f"Model path: {args.model_path}")
     print(f"Few-shot: {args.few_shot}")
     print(f"Template: {template_type}")
+    print(f"Mode: {'Batch (1 API call/image)' if use_batch_mode else 'Incremental (N API calls/image)'}")
+    print(f"Parallel workers: {args.parallel}")
+    print(f"Save interval: {args.save_interval} images")
     print(f"With AD: {args.with_ad}")
     print(f"Data root: {data_root}")
     print(f"MMAD JSON: {mmad_json}")
@@ -327,13 +347,10 @@ def main():
     total_questions = 0
     processed = 0
     errors = 0
+    last_save = 0
 
-    # Evaluate with progress bar
-    pbar = tqdm(image_paths, desc="Evaluating", ncols=100)
-    for image_rel in pbar:
-        if image_rel in existing_images:
-            continue
-
+    def process_single_image(image_rel):
+        """Process a single image and return results."""
         meta = mmad_data[image_rel]
 
         # Get templates
@@ -348,21 +365,18 @@ def main():
 
         # Check if image exists
         if not Path(query_image_path).exists():
-            errors += 1
-            continue
+            return None, "not_found"
 
         # Get AD prediction for this image if available
         ad_info = None
         if ad_predictions is not None:
-            # Try different path formats to find the prediction
             ad_info = ad_predictions.get(image_rel)
             if ad_info is None:
-                # Try with normalized path
                 normalized_path = image_rel.replace("\\", "/")
                 ad_info = ad_predictions.get(normalized_path)
 
         # Generate answers
-        if args.batch_mode:
+        if use_batch_mode:
             questions, answers, predicted, q_types = llm_client.generate_answers_batch(
                 query_image_path, meta, few_shot_paths, ad_info=ad_info
             )
@@ -372,34 +386,102 @@ def main():
             )
 
         if predicted is None or len(predicted) != len(answers):
-            errors += 1
-            continue
+            return None, "failed"
 
-        # Calculate accuracy for this image
-        correct = sum(1 for p, a in zip(predicted, answers) if p == a)
-        total_correct += correct
-        total_questions += len(answers)
-        processed += 1
+        return {
+            "image_rel": image_rel,
+            "questions": questions,
+            "answers": answers,
+            "predicted": predicted,
+            "q_types": q_types
+        }, "success"
 
-        # Update progress bar with running accuracy
-        running_acc = total_correct / total_questions if total_questions > 0 else 0
-        pbar.set_postfix({"acc": f"{running_acc:.1%}", "done": processed, "err": errors}, refresh=False)
+    # Filter images to process
+    images_to_process = [img for img in image_paths if img not in existing_images]
+    print(f"Images to process: {len(images_to_process)} (skipping {len(existing_images)} existing)")
 
-        # Store results
-        for q, a, pred, qt in zip(questions, answers, predicted, q_types):
-            all_answers.append({
-                "image": image_rel,
-                "question": q,
-                "question_type": qt,
-                "correct_answer": a,
-                "gpt_answer": pred
-            })
+    # Parallel or sequential processing
+    if args.parallel > 1:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        # Save incrementally
-        with open(answers_json_path, "w", encoding="utf-8") as f:
-            json.dump(all_answers, f, indent=4, ensure_ascii=False)
+        num_workers = min(args.parallel, 5)  # Cap at 5 workers
+        print(f"Using {num_workers} parallel workers")
 
-    pbar.close()
+        pbar = tqdm(total=len(images_to_process), desc="Evaluating", ncols=100)
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = {executor.submit(process_single_image, img): img for img in images_to_process}
+
+            for future in as_completed(futures):
+                result, status = future.result()
+
+                if status == "success" and result:
+                    correct = sum(1 for p, a in zip(result["predicted"], result["answers"]) if p == a)
+                    total_correct += correct
+                    total_questions += len(result["answers"])
+                    processed += 1
+
+                    for q, a, pred, qt in zip(result["questions"], result["answers"], result["predicted"], result["q_types"]):
+                        all_answers.append({
+                            "image": result["image_rel"],
+                            "question": q,
+                            "question_type": qt,
+                            "correct_answer": a,
+                            "gpt_answer": pred
+                        })
+                else:
+                    errors += 1
+
+                # Update progress bar
+                running_acc = total_correct / total_questions if total_questions > 0 else 0
+                pbar.update(1)
+                pbar.set_postfix({"acc": f"{running_acc:.1%}", "done": processed, "err": errors}, refresh=False)
+
+                # Save periodically
+                if processed - last_save >= args.save_interval:
+                    with open(answers_json_path, "w", encoding="utf-8") as f:
+                        json.dump(all_answers, f, indent=2, ensure_ascii=False)
+                    last_save = processed
+
+        pbar.close()
+    else:
+        # Sequential processing
+        pbar = tqdm(images_to_process, desc="Evaluating", ncols=100)
+        for image_rel in pbar:
+            result, status = process_single_image(image_rel)
+
+            if status == "success" and result:
+                correct = sum(1 for p, a in zip(result["predicted"], result["answers"]) if p == a)
+                total_correct += correct
+                total_questions += len(result["answers"])
+                processed += 1
+
+                for q, a, pred, qt in zip(result["questions"], result["answers"], result["predicted"], result["q_types"]):
+                    all_answers.append({
+                        "image": result["image_rel"],
+                        "question": q,
+                        "question_type": qt,
+                        "correct_answer": a,
+                        "gpt_answer": pred
+                    })
+            else:
+                errors += 1
+
+            # Update progress bar
+            running_acc = total_correct / total_questions if total_questions > 0 else 0
+            pbar.set_postfix({"acc": f"{running_acc:.1%}", "done": processed, "err": errors}, refresh=False)
+
+            # Save periodically (not every image!)
+            if processed - last_save >= args.save_interval:
+                with open(answers_json_path, "w", encoding="utf-8") as f:
+                    json.dump(all_answers, f, indent=2, ensure_ascii=False)
+                last_save = processed
+
+        pbar.close()
+
+    # Final save
+    with open(answers_json_path, "w", encoding="utf-8") as f:
+        json.dump(all_answers, f, indent=2, ensure_ascii=False)
 
     print()
     print("=" * 60)

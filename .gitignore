@@ -9,6 +9,8 @@ dataset/
 results/
 output/
 Frontend/
+imagenette/
+pre_trained/
 
 # ===== Python =====
 __pycache__/
