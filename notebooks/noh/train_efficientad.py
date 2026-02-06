@@ -10,8 +10,8 @@ import inspect
 def _import_model(model_name: str):
     """EfficientAD 모델 클래스 임포트 (버전 호환성 유지)"""
     EfficientAD = None
-    # 대소문자 후보군 순회
-    for cand in ("EfficientAd", "EfficientAD", "Efficientad"):
+    # 모델 import
+    for cand in ("EfficientAd"):
         try:
             mod = __import__("anomalib.models", fromlist=[cand])
             EfficientAD = getattr(mod, cand)

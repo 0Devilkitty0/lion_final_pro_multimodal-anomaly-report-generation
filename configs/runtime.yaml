@@ -1,11 +1,12 @@
 # Data
 data:
-  root: datasets/MMAD
+  root: dataset/MMAD
+  # root: /content/dataset/MMAD
   output_root: ./output
 
 # Anomaly Detection Model
 anomaly:
-  model: patchcore  # patchcore | winclip | efficientad
+  model: efficientad  # patchcore | winclip | efficientad
 
   patchcore:
     backbone: null
@@ -23,16 +24,16 @@ anomaly:
 
 # Training
 training:
-  train_batch_size: null
-  eval_batch_size: null
+  train_batch_size: 1
+  eval_batch_size: 1
   num_workers: null
-  max_epochs: null  # null -> model default
+  max_epochs: 100  # null -> model default
 
 # Engine
 engine:
-  accelerator: cpu  # auto | cpu | gpu | mps # Mac은 cpu 권장 mps 호환성 문제 심함
+  accelerator: auto  # auto | cpu | gpu | mps # Mac은 cpu 권장 mps 호환성 문제 심함
   enable_progress_bar: false
-  logger: false
+  logger: wandb
 
 # Output
 output:

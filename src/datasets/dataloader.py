@@ -6,8 +6,8 @@ from anomalib.data.datamodules.base import AnomalibDataModule
 
 
 class MMADLoader:
-    # DATASETS = ["GoodsAD"] # 단일 Test
-    DATASETS = ["MVTec-AD", "VisA", "GoodsAD", "MVTec-LOCO"]
+    DATASETS = ["GoodsAD"] 
+    # DATASETS = ["GoodsAD", "MVTec-LOCO", "MVTec-AD", "VisA"]
 
     # 카테고리가 아닌 폴더 제외
     EXCLUDE_DIRS = {"split_csv", "visa_pytorch"}

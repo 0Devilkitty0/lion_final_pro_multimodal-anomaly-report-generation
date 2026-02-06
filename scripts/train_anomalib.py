@@ -1,5 +1,10 @@
 from pathlib import Path
 import json
+import glob
+import os
+from pathlib import Path
+import wandb
+from lightning.pytorch.loggers import WandbLogger, CSVLogger
 
 from anomalib.models import Patchcore, WinClip, EfficientAd
 from anomalib.engine import Engine
@@ -68,57 +73,108 @@ class Anomalibs:
             kwargs["num_workers"] = self.training_config["num_workers"]
         return kwargs
 
-    def get_engine(self):
+    def get_engine(self, category: str = None, logger_instance=None):
+        """엔진 생성 시 카테고리별 독립된 경로와 로거를 사용하도록 수정"""
+        # 1. 로거 설정 처리
+        if logger_instance is None:
+            logger_config = self.engine_config.get("logger", False)
+            if logger_config == "wandb" and category:
+                # 개별 Run으로 관리되도록 설정
+                actual_logger = WandbLogger(
+                    project="Anomalib_GoodsAD",
+                    name=f"{category}_{self.model_name}_100e",
+                    log_model=False,
+                    save_dir=str(self.output_root / category)
+                )
+            else:
+                actual_logger = None
+        else:
+            actual_logger = logger_instance
+
+        # 2. 출력 경로를 카테고리별로 완전 분리
+        engine_root = self.output_root / category if category else self.output_root
+
         kwargs = {
             "accelerator": self.engine_config.get("accelerator", "auto"),
             "devices": 1,
-            "default_root_dir": str(self.output_root),
-            "logger": self.engine_config.get("logger", False),
+            "default_root_dir": str(engine_root),
+            "logger": actual_logger,
             "enable_progress_bar": self.engine_config.get("enable_progress_bar", False),
         }
 
         if "max_epochs" in self.training_config:
             kwargs["max_epochs"] = self.training_config["max_epochs"]
+        
         return Engine(**kwargs)
+
 
     def get_ckpt_path(self, dataset: str, category: str) -> Path | None:
         if self.model_name == "winclip":
             return None
-        return (
-            self.output_root
-            / self.model_name.capitalize()
-            / dataset
-            / category
-            / "v0/weights/lightning/model.ckpt"
-        )
+
+        # 1. 모든 가능성을 열어두고 실제 존재하는 .ckpt 파일을 검색합니다.
+        # 패턴 설명: output 폴더 하위 어디든(**/) category 이름이 있고, 그 하위 어디든 model.ckpt가 있는 경로
+        search_pattern = str(self.output_root / "**" / category / "**" / "weights" / "lightning" / "model.ckpt")
+        found_files = sorted(glob.glob(search_pattern, recursive=True))
+
+        if found_files:
+            return Path(found_files[-1])
+
+        # 2. 만약 위 패턴으로도 못 찾았다면, 조금 더 넓은 범위로 검색
+        search_pattern_simple = str(self.output_root / "**" / category / "**" / "model.ckpt")
+        found_files_simple = glob.glob(search_pattern_simple, recursive=True)
+        
+        if found_files_simple:
+            logger.info(f"✅ 체크포인트 발견 성공(심플): {found_files_simple[0]}")
+            return Path(found_files_simple[0])
+
+        # 3. 정말 다 실패했을 때만 에러 메시지용 경로 반환
+        logger.error(f"❌ 파일을 찾을 수 없습니다. 검색 패턴: {search_pattern}")
+        return self.output_root / "EfficientAd" / category / "**" / "weights/lightning/model.ckpt"
 
     def requires_fit(self) -> bool:
         return self.model_name != "winclip"
+
 
     def fit(self, dataset: str, category: str):
         if not self.requires_fit():
             logger.info(f"{self.model_name} - no training required (zero-shot)")
             return self
 
-        logger.info(f"Fitting {self.model_name} - {dataset}/{category}")
+        logger.info(f"🚀 Fitting {self.model_name} - {dataset}/{category}")
 
-        model = self.get_model()
+        # [핵심] 이전 WandB 세션이 있다면 종료 후 새로 시작
+        if wandb.run is not None:
+            wandb.finish()
+
+        # 1. 모델 객체 새로 생성 (기존과 동일하지만 명시적으로 루프 안에서 수행)
+        model = self.get_model() 
+        
+        # 2. 데이터모듈 생성
         dm_kwargs = self.get_datamodule_kwargs()
         datamodule = self.loader.get_datamodule(dataset, category, **dm_kwargs)
-        engine = self.get_engine()
 
+        # 3. 카테고리 전용 엔진 및 로거 생성
+        engine = self.get_engine(category=category)
+
+        # 4. 학습 시작
         engine.fit(datamodule=datamodule, model=model)
-        logger.info(f"Fitting {dataset}/{category} done")
-
+        
+        # 학습 완료 후 즉시 세션 종료하여 다음 카테고리와의 간섭 차단
+        wandb.finish() 
+        
+        logger.info(f"✅ Fitting {dataset}/{category} done")
         return self
 
     def predict(self, dataset: str, category: str, save_json: bool = None):
-        logger.info(f"Predicting {self.model_name} - {dataset}/{category}")
+        logger.info(f"🔍 Predicting {self.model_name} - {dataset}/{category}")
 
         model = self.get_model()
         dm_kwargs = self.get_datamodule_kwargs()
         datamodule = self.loader.get_datamodule(dataset, category, **dm_kwargs)
-        engine = self.get_engine()
+        
+        # 예측 시에도 독립된 엔진 사용 (로그 꼬임 방지)
+        engine = self.get_engine(category=category)
         ckpt_path = self.get_ckpt_path(dataset, category)
 
         predictions = engine.predict(
@@ -127,13 +183,15 @@ class Anomalibs:
             ckpt_path=ckpt_path,
         )
 
-        # save json
         if save_json is None:
             save_json = self.output_config.get("save_json", False)
         if save_json:
             self.save_predictions_json(predictions, dataset, category)
 
-        logger.info(f"Predicting {dataset}/{category} done - {len(predictions)} batches")
+        if wandb.run is not None:
+            wandb.finish()
+
+        logger.info(f"✅ Predicting {dataset}/{category} done")
         return predictions
 
     def get_mask_path(self, image_path: str, dataset: str) -> str | None:
