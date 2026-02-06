@@ -3,10 +3,7 @@
 # Data
 data:
   root: dataset/MMAD
-<<<<<<< HEAD
   # root: /content/dataset/MMAD
-=======
->>>>>>> 906d101d76d8ee723163569ca27478f68b5ac819
   output_root: ./output
 
 # Anomaly Detection Model
@@ -32,33 +29,17 @@ anomaly:
 
 # Training
 training:
-<<<<<<< HEAD
   train_batch_size: 1
   eval_batch_size: 1
   num_workers: null
   max_epochs: 100  # null -> model default
-=======
-  resume: false # true로 설정 시, 가능한 경우 이전 학습을 이어감
-  train_batch_size: null
-  eval_batch_size: null
-  num_workers: 0 # Colab A100 기준 4~10 권장
-  max_epochs: Null  # EfficientAd는 빠른 수렴, 부족하면 추가 학습 가능
->>>>>>> 906d101d76d8ee723163569ca27478f68b5ac819
 
 # Engine
 engine:
   accelerator: auto  # auto | cpu | gpu | mps # Mac은 cpu 권장 mps 호환성 문제 심함
-<<<<<<< HEAD
   enable_progress_bar: false
   logger: wandb
-=======
-  enable_progress_bar: false  # true면 Colab에서 tqdm/rich 충돌로 RecursionError 발생
-  logger: wandb  # false | wandb
 
-# WandB
-wandb:
-  project: "Anomaly_Detection"
->>>>>>> 906d101d76d8ee723163569ca27478f68b5ac819
 
 # Output
 output:

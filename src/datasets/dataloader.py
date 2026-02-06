@@ -387,14 +387,8 @@ class MVTecLOCODataModule(LightningDataModule):
 
 
 class MMADLoader:
-<<<<<<< HEAD
     DATASETS = ["GoodsAD"] 
     # DATASETS = ["GoodsAD", "MVTec-LOCO", "MVTec-AD", "VisA"]
-=======
-    # DATASETS = ["MVTec-LOCO"]  # 단일 Test
-    DATASETS = ["GoodsAD", "MVTec-LOCO"]
-    # DATASETS = ["MVTec-AD", "VisA", "GoodsAD", "MVTec-LOCO"]
->>>>>>> 906d101d76d8ee723163569ca27478f68b5ac819
 
     EXCLUDE_DIRS = {"split_csv", "visa_pytorch"}
 
